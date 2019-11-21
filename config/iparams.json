@@ -1,0 +1,42 @@
+{
+  "voucher_api": {
+    "display_name": "Voucher API URL",
+    "description": "Enter the Voucher API URL. Only secure APIs are allowed. Skip the protocol while entering the API URL. For ex: 'example.com/vouchers' ",
+    "type": "text",
+    "required": true
+  },
+  "voucher_api_id": {
+    "display_name": "Voucher API ID",
+    "description": "Enter the Voucher API ID.",
+    "type": "text",
+    "required": true
+  },
+  "voucher_api_key": {
+    "display_name": "Voucher API KEY",
+    "description": "Enter the Voucher API KEY ",
+    "type": "text",
+    "required": true
+  },
+  "source_id_type": {
+    "display_name": "Source_id type",
+    "description": "Choose one of a FreshChat sources",
+    "type": "radio",
+    "required": true,
+    "options": [
+      "userId",
+      "conversationId"
+    ],
+    "default_value": "userId"
+  },
+  "vouchers_per_session": {
+    "display_name": "Voucher per session",
+    "description": "Check how many vouchers per chat session customer care can send to the customer",
+    "type": "radio",
+    "required": true,
+    "options": [
+      "one",
+      "multiple"
+    ],
+    "default_value": "one"
+  }
+}
