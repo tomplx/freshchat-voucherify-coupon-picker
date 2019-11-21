@@ -1,0 +1,7 @@
+{
+  "voucher_api": "https://api.voucherify.io/v1",
+  "voucher_api_id": "put your api id here",
+  "voucher_api_key": "put your api key here",
+  "source_id_type": "userId",
+  "vouchers_per_session": "one"
+}
