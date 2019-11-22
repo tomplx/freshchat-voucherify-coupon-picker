@@ -24,10 +24,13 @@ function onAppInitializedCallback(_client) {
   client.instance.resize({ height: '190px' });
 
   let sourceIdType;
-  const template = $('#voucher_list').html();
+  const templateVouchers = $('#voucher_list').html();
+  const templateCampaigns = $('#campaigns_list').html();
+  const templateScriptVouchers = Handlebars.compile(templateVouchers);
+  const templateScriptCampaigns = Handlebars.compile(templateCampaigns);
   const $loader = $('.fc_loader');
   const $voucherForm = $('#voucherify_options_form');
-  const loadVoucher = userSelectedSourceIdType => {
+  const loadVoucher = (userSelectedSourceIdType, userSelectedSourceCampaignName) => {
     /**
      *  Getting information have any voucher been assign to the customer while the same session
      *  @param {string} _sessionId
@@ -166,6 +169,10 @@ function onAppInitializedCallback(_client) {
         }
         else {
           return {
+            campaign: {
+              name: userSelectedSourceCampaignName,
+              count: '1'
+            },
             customer: {
               source_id: finalSourceId,
               email: resolvedUserData.email,
@@ -176,8 +183,8 @@ function onAppInitializedCallback(_client) {
         }
       }
     )
-    .then(preparedCustomerData => {
-      if(!preparedCustomerData) {
+    .then(preparedData => {
+      if(!preparedData) {
         throw new Error('Wrong');
       }
       else {
@@ -190,11 +197,10 @@ function onAppInitializedCallback(_client) {
             },
             body: JSON.stringify({
               campaign: {
-                name: 'Auto update 50% vouchers Campaign',
-                count: '1'
+                ...preparedData.campaign
               },
               customer: {
-                  ...preparedCustomerData.customer
+                  ...preparedData.customer
               }
             })
           })
@@ -204,7 +210,7 @@ function onAppInitializedCallback(_client) {
             // Proceed to store info that voucher is published in existing session
             // Show voucher in view
             // Turn loader off
-            storePublishedVoucherInSession(preparedCustomerData.sessionId);
+            storePublishedVoucherInSession(preparedData.sessionId);
             showVoucher([parsedResponse.voucher]);
             $voucherForm.toggleClass('show', false);
             $loader.toggleClass('show', false);
@@ -227,6 +233,31 @@ function onAppInitializedCallback(_client) {
     });
   };
 
+  function loadCampaigns() {
+    client.request
+          .invoke('getCampaigns', {limit: '5'})
+          .then(data => {
+            let parsedResponse = JSON.parse(data.response);
+            const mappedCampaigns = parsedResponse.campaigns.map(campaign => {
+              return {
+                name: campaign.name,
+                description: campaign.description
+              }
+            })
+
+            // Then putting list of campaigns into view
+            showCampaigns(mappedCampaigns);
+          })
+          .catch(error => {
+            //Log and notify the agent/user
+            console.error(error);
+            showNotification('danger', 'Unable to get campaigns data from API');
+            client.instance.close();
+          });
+  }
+
+  loadCampaigns();
+
   /**
    * Handles click on the radio button and sets variable value as a radio value
    * @param {radio} radio input
@@ -238,9 +269,11 @@ function onAppInitializedCallback(_client) {
   window.handlePublishVoucher = function(event) {
     event.preventDefault();
 
+    const selectedCampaign = $('#campaignsList').val();
+
     if(typeof sourceIdType !== 'undefined') {
       $loader.toggleClass('show', true);
-      loadVoucher(sourceIdType);
+      loadVoucher(sourceIdType, selectedCampaign);
     }
     else {
       showNotification('danger', 'Please choose source id type first!');
@@ -253,9 +286,19 @@ function onAppInitializedCallback(_client) {
    */
   function showVoucher(voucherData) {
     try {
-      var templateScript = Handlebars.compile(template);
-      var html = templateScript({vouchers: voucherData});
+      var html = templateScriptVouchers({vouchers: voucherData});
       $("#vouchers").html(html);
+    } catch (e) {
+      console.error(e);
+      showNotification('danger', 'Unable to render view');
+      client.instance.close();
+    }
+  }
+
+  function showCampaigns(campaignsData) {
+    try {
+      var html = templateScriptCampaigns({campaigns: campaignsData});
+      $("#campaignsList").html(html);
     } catch (e) {
       console.error(e);
       showNotification('danger', 'Unable to render view');
@@ -280,7 +323,6 @@ function onAppInitializedCallback(_client) {
         client.instance.close();
       });
   };
-
 
   /**
    * Shows notification to the agent

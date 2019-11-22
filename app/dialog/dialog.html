@@ -12,6 +12,14 @@
 <body>
     <div class="fw-content-list">
         <form id="voucherify_options_form" class="show" onsubmit="handlePublishVoucher(event);">
+            <p>Voucherify campaign:</p>
+            <select class="campaigns-select" id="campaignsList">
+                <script id="campaigns_list" type="text/x-handlebars-template">
+                    {{#each campaigns}}
+                        <option value="{{name}}">{{name}}</option>
+                    {{/each}}
+                </script>
+            </select>
             <p>Choose type of source id</p>
             <label class="radio-label">
                 <input type="radio" name="sourceIdType" value="sessionId" onclick="handleSourceIdType(this);">
@@ -35,7 +43,7 @@
             <script id="voucher_list" type="text/x-handlebars-template">
                 {{#each vouchers}}
                 <div class="fc_voucher" data-vouchertitle={{code}}>
-                    <img src="../resources/icon-voucherify-logo.png" class="fc_voucher_image" height="52px"/>
+                    <img src="../resources/icon-voucherify-logo.png" class="fc_voucher_image" height="48px"/>
                     <div class="fc_detail">
                         <span class="fc_voucher_title">{{code}}</span><br>
                     </div>
