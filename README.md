@@ -20,7 +20,7 @@ This application is not yet in the FreshWorks Apps Market, it's only local machi
 2. Run the app locally using the [`fdk run`](https://developers.freshchat.com/v2/docs/freshworks-cli/#run) command.
 
 3. You'll find Voucherify icon just below conversation, beside tool icons.
-![](readme_resources/record2.png)
+![](readme_resources/record2.gif)
 
 4. Be sure to have at least email or first_name of your customer!
 
