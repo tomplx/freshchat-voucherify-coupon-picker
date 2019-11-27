@@ -8,11 +8,7 @@ $(document).ready(function () {
       return _client;
     })
     .then(onAppInitializedCallback)
-    .catch(function (error) {
-      //Log and notify initialization error
-      console.error(error);
-      showNotification('danger', 'Unable to initialize the app');
-    });
+    .catch(() => showNotification('danger', 'Unable to initialize the app'));
 });
 
 /**
@@ -21,204 +17,82 @@ $(document).ready(function () {
  */
 function onAppInitializedCallback(_client) {
   window.client = _client;
-  client.instance.resize({ height: '190px' });
+  client.instance.resize({ height: '240px' });
 
   let sourceIdType;
-  const templateVouchers = $('#voucher_list').html();
-  const templateCampaigns = $('#campaigns_list').html();
-  const templateScriptVouchers = Handlebars.compile(templateVouchers);
-  const templateScriptCampaigns = Handlebars.compile(templateCampaigns);
+  const $templateVouchers = $('#voucher_list').html();
+  const $templateCampaigns = $('#campaigns_list').html();
+  const templateScriptVouchers = Handlebars.compile($templateVouchers);
+  const templateScriptCampaigns = Handlebars.compile($templateCampaigns);
   const $loader = $('.fc_loader');
   const $voucherForm = $('#voucherify_options_form');
-  const loadVoucher = (userSelectedSourceIdType, userSelectedSourceCampaignName) => {
-    /**
-     *  Getting information have any voucher been assign to the customer while the same session
-     *  @param {string} _sessionId
-     */
-    async function isVoucherPublishedInSession(_sessionId) {
-      return new Promise(resolve => {
-        client.db
-          .get(`sessions`)
-          .then(data => {
-            let isVoucherSent = false;
+  const voucherService = new VoucherService(client);
 
-            data.sessionsWithPublishedVoucher.forEach((val => {
-              if(val === _sessionId) {
-                isVoucherSent = true;
-              }
-            }));
+  const isVoucherPerSessionRestricted = function(_vouchersPerSession, _isVoucherSent) {
+    return _vouchersPerSession === 'one' && typeof isVoucherSent !== 'undefined' && isVoucherSent;
+  };
 
-            resolve(isVoucherSent);
-          })
-          .catch(error => error)
-          .then(error => {
-            if(error && error.status === 404) {
-              client.db.set( 'sessions', { 'sessionsWithPublishedVoucher': []})
-                .catch(error => {
-                  console.log('Could not save data, error!', error);
-                });
-            }
+  const prepareDataForVoucherPublication = async function(_context, _userSelectedSourceIdType, _userSelectedSourceCampaignName) {
+    const clientData = _context.data.clientData;
+    const sessionId = _context.data.sessionId;
+    const iParamsConfig = _context.data.iParamsConfig;
+    const sourceIdsByTypes = {
+      'userId': clientData.source_id,
+      'sessionId': sessionId,
+      'email': clientData.email
+    };
+    const isVoucherSent = await voucherService.isVoucherPublishedInSession(sessionId);
+    const finalSourceId = sourceIdsByTypes[_userSelectedSourceIdType] || clientData.source_id || clientData.email || sessionId || '';
 
-            resolve(false);
-          });
-        });
+    if (isVoucherPerSessionRestricted(iParamsConfig.vouchers_per_session, isVoucherSent)) {
+      throw new Error('You cannot send more vouchers while this chat session. Wait for a next session with this customer.');
     }
-
-    /**
-     *  Storing information about voucher assigned to the customer while provided session
-     *  Firstly it's iterating over existing stored information, then if there's no session stored,
-     *  it will put new one
-     *  @param {string} _sessionId
-     */
-    const storePublishedVoucherInSession = async function(_sessionId) {
-      return client.db
-        .get('sessions')
-        .then(data => {
-          const sessionsWithPublishedVoucher = data.sessionsWithPublishedVoucher;
-
-          if(sessionsWithPublishedVoucher) {
-            let isSessionFound = false;
-
-            sessionsWithPublishedVoucher.forEach(sessionId => {
-              if(sessionId === _sessionId) {
-                isSessionFound = true;
-              }
-            });
-
-            return isSessionFound;
-          }
-        })
-        .then(isSessionFound => {
-          // Append new session id if there is no same!
-          if(!isSessionFound) {
-            client.db
-              .update( 'sessions', 'append', { 'sessionsWithPublishedVoucher': [_sessionId]})
-              .then(data => data)
-              .catch(error => {
-                showNotification('We did not save data, error error!')
-                console.log('We did not save data, error error!',error);
-              });
-          }
-        });
+    else {
+      return {
+        campaign: {
+          name: _userSelectedSourceCampaignName,
+          count: '1'
+        },
+        customer: {
+          source_id: finalSourceId,
+          email: clientData.email,
+          name: `${clientData.first_name || ''} ${clientData.last_name || ''}` || ''
+        },
+        sessionId: sessionId
+      };
     }
+  }
 
-    /**
-     *  Get customer data from FreshChat
-     */
-    const getUserData = new Promise(resolve => {
-      client.data
-        .get('user')
-        .then(data => {
-            resolve({
-              ...data.user,
-              source_id: data.user.id || '',
-              email: data.user.email || ''
-            });
-        });
-    });
+  const proceedWithVoucherPublication = function(_voucher, _sessionId) {
+    // Proceed to store info that voucher is published in existing session
+    // Show voucher in view
+    // Turn loader off
+    voucherService.storePublishedVoucherInSession(_sessionId);
+    showVoucher([_voucher]);
+    $voucherForm.toggleClass('show', false);
+    $loader.toggleClass('show', false);
+    client.instance.resize({ height: "90px" });
+  };
 
-    /**
-     *  Get sessionId
-     */
-    const getSessionId = new Promise(resolve => {
-      client.data
-        .get('conversation')
-        .then(data => {
-            resolve(data.conversation.conversation_id);
-        });
-    });
-
-    /**
-     *  Import source_id_type and vouchers_per_session flags from iparams config.
-     */
-    const getIparamsConfiguration = new Promise(resolve => {
-      client.iparams
-        .get()
-        .then(data => {
-          resolve({
-            source_id_type: data.source_id_type,
-            vouchers_per_session: data.vouchers_per_session
-          })
-        });
-    })
-
+  const loadVoucher = (_userSelectedSourceIdType, _userSelectedSourceCampaignName) => {
     /**
      *  Collecting all informations after all configuration promises are ready.
      *  Checking for one voucher per session logic.
      *  Grabbing all data and sending request to the Voucherify API for getting voucher for specific customer.
      */
-    Promise
-      .all([getUserData, getSessionId, getIparamsConfiguration])
-      .then(async result => {
-        const [resolvedUserData, resolvedSessionId, resolvedIparamsConfig] = result;
-        const sourceIdsByTypes = {
-          'userId': resolvedUserData.source_id,
-          'sessionId': resolvedSessionId,
-          'email': resolvedUserData.email
-        };
-        const isVoucherSent = await isVoucherPublishedInSession(resolvedSessionId);
-        const finalSourceId = sourceIdsByTypes[userSelectedSourceIdType] || '';
-
-        if (resolvedIparamsConfig.vouchers_per_session === 'one' && typeof isVoucherSent !== 'undefined' && isVoucherSent === true) {
-          console.error("resolvedIparamsConfig.vouchers_per_session === 'one' && typeof isVoucherSent !== 'undefined' && isVoucherSent === true", resolvedIparamsConfig.vouchers_per_session, isVoucherSent);
-          throw new Error('You cannot send more vouchers while this chat session. Wait for a next session with this customer.');
-        }
-        else if (resolvedUserData.email === '' || resolvedUserData.first_name === '') {
-          console.error("resolvedUserData - no email or no first name!", resolvedUserData);
-          throw new Error('You did not provide customer data like mail, first name and last name!');
-        }
-        else {
-          return {
-            campaign: {
-              name: userSelectedSourceCampaignName,
-              count: '1'
-            },
-            customer: {
-              source_id: finalSourceId,
-              email: resolvedUserData.email,
-              name: `${resolvedUserData.first_name || ''} ${resolvedUserData.last_name || ''}` || ''
-            },
-            sessionId: resolvedSessionId
-          };
-        }
-      }
+    client.instance
+      .context()
+      .then(_context => prepareDataForVoucherPublication(_context, _userSelectedSourceIdType, _userSelectedSourceCampaignName)
     )
     .then(preparedData => {
       if(!preparedData) {
-        throw new Error('Wrong');
+        throw new Error('Wrong data provided! Please, contact support');
       }
       else {
         client.request
-          .post('<%= iparam.voucher_api %>/publications', {
-            headers: {
-              'X-App-Id': '<%= iparam.voucher_api_id %>',
-              'X-App-Token': '<%= iparam.voucher_api_key %>',
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-              campaign: {
-                ...preparedData.campaign
-              },
-              customer: {
-                  ...preparedData.customer
-              }
-            })
-          })
-          .then(data => {
-            const parsedResponse = JSON.parse(data.response);
-
-            // Proceed to store info that voucher is published in existing session
-            // Show voucher in view
-            // Turn loader off
-            storePublishedVoucherInSession(preparedData.sessionId);
-            showVoucher([parsedResponse.voucher]);
-            $voucherForm.toggleClass('show', false);
-            $loader.toggleClass('show', false);
-            client.instance.resize({ height: "90px" });
-          })
+          .invoke('publishVoucher', { data: preparedData })
+          .then(data => { proceedWithVoucherPublication(data.response, preparedData.sessionId) })
           .catch(error => {
-            //Log and notify the agent/user
-            console.error(error);
             showNotification('danger', 'Unable to get voucher data from API');
             client.instance.close();
           });
@@ -227,7 +101,6 @@ function onAppInitializedCallback(_client) {
       }
     })
     .catch(error => {
-      console.log(error);
       client.instance.close();
       showNotification('danger', error);
     });
@@ -235,25 +108,12 @@ function onAppInitializedCallback(_client) {
 
   function loadCampaigns() {
     client.request
-          .invoke('getCampaigns', {limit: '5'})
-          .then(data => {
-            let parsedResponse = JSON.parse(data.response);
-            const mappedCampaigns = parsedResponse.campaigns.map(campaign => {
-              return {
-                name: campaign.name,
-                description: campaign.description
-              }
-            })
-
-            // Then putting list of campaigns into view
-            showCampaigns(mappedCampaigns);
-          })
-          .catch(error => {
-            //Log and notify the agent/user
-            console.error(error);
-            showNotification('danger', 'Unable to get campaigns data from API');
-            client.instance.close();
-          });
+      .invoke('getCampaigns', {limit: '5'})
+      .then(showCampaigns)
+      .catch(error => {
+        showNotification('danger', 'Unable to get campaigns data from API');
+        client.instance.close();
+      });
   }
 
   loadCampaigns();
@@ -276,7 +136,8 @@ function onAppInitializedCallback(_client) {
       loadVoucher(sourceIdType, selectedCampaign);
     }
     else {
-      showNotification('danger', 'Please choose source id type first!');
+      $loader.toggleClass('show', true);
+      loadVoucher('fallback', selectedCampaign);
     }
   }
 
@@ -295,9 +156,9 @@ function onAppInitializedCallback(_client) {
     }
   }
 
-  function showCampaigns(campaignsData) {
+  function showCampaigns(_campaigns) {
     try {
-      var html = templateScriptCampaigns({campaigns: campaignsData});
+      var html = templateScriptCampaigns(_campaigns.response);
       $("#campaignsList").html(html);
     } catch (e) {
       console.error(e);
@@ -329,7 +190,7 @@ function onAppInitializedCallback(_client) {
    * @param {string} type
    * @param {string} message
    */
-  function showNotification(type, message) {
+  window.showNotification = function(type, message) {
     client.interface.trigger('showNotify', {
       type: type || 'alert',
       message: message || 'NA'
